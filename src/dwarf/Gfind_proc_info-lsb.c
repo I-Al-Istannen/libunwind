@@ -610,6 +610,12 @@ dwarf_callback (struct dl_phdr_info *info, size_t size, void *ptr)
   if (p_eh_hdr)
     {
       hdr = (struct dwarf_eh_frame_hdr *) (p_eh_hdr->p_vaddr + load_base);
+      Debug (1, "=== FOUND PT_GNU_EH_FRAME for '%s' ===\n",
+             info->dlpi_name ? info->dlpi_name : "[main]");
+      Debug (1, "p_eh_hdr->p_vaddr=0x%lx\n", (long) p_eh_hdr->p_vaddr);
+      Debug (1, "load_base=0x%lx\n", (long) load_base);
+      Debug (1, "hdr address=0x%lx (p_vaddr + load_base)\n", (long) (uintptr_t) hdr);
+      Debug (1, "p_eh_hdr->p_memsz=%lu bytes\n", (unsigned long) p_eh_hdr->p_memsz);
     }
   else
     {
@@ -726,10 +732,24 @@ dwarf_callback (struct dl_phdr_info *info, size_t size, void *ptr)
           di->u.rti.segbase = (unw_word_t) (uintptr_t) hdr;
 
           found = 1;
-          Debug (15, "found table `%s': segbase=0x%lx, len=%lu, gp=0x%lx, "
-                 "table_data=0x%lx\n", (char *) (uintptr_t) di->u.rti.name_ptr,
-                 (long) di->u.rti.segbase, (long) di->u.rti.table_len,
-                 (long) di->gp, (long) di->u.rti.table_data);
+          Debug (1, "[SEGBASE TRACE] dwarf_callback (LOCAL): Setting up di->u.rti.segbase\n");
+          Debug (1, "[SEGBASE TRACE]   info->dlpi_name=%s\n", info->dlpi_name ? info->dlpi_name : "[main]");
+          Debug (1, "[SEGBASE TRACE]   info->dlpi_addr=0x%lx (shared object base address)\n", (long) info->dlpi_addr);
+          Debug (1, "[SEGBASE TRACE]   load_base=0x%lx (info->dlpi_addr)\n", (long) load_base);
+          Debug (1, "[SEGBASE TRACE]   hdr=0x%lx (PT_GNU_EH_FRAME at p_vaddr + load_base)\n", (long) (uintptr_t) hdr);
+          Debug (1, "[SEGBASE TRACE]   di->u.rti.segbase=0x%lx (set to hdr address for LOCAL unwinding)\n", (long) di->u.rti.segbase);
+          Debug (1, "=== SETTING UP REMOTE_TABLE for '%s' ===\n",
+                 info->dlpi_name ? info->dlpi_name : "[main]");
+          Debug (1, "load_base=0x%lx\n", (long) load_base);
+          Debug (1, "p_text->p_vaddr=0x%lx\n", (long) p_text->p_vaddr);
+          Debug (1, "hdr address=0x%lx\n", (long) (uintptr_t) hdr);
+          Debug (1, "di->start_ip=0x%lx (text_vaddr + load_base)\n", (long) di->start_ip);
+          Debug (1, "di->end_ip=0x%lx\n", (long) di->end_ip);
+          Debug (1, "di->u.rti.segbase=0x%lx (hdr address)\n", (long) di->u.rti.segbase);
+          Debug (1, "di->u.rti.table_data=0x%lx (addr of table)\n", (long) di->u.rti.table_data);
+          Debug (1, "di->u.rti.table_len=%lu (in unw_word_t units)\n", (long) di->u.rti.table_len);
+          Debug (1, "fde_count=%lu\n", (long) fde_count);
+          Debug (1, "di->gp=0x%lx\n", (long) di->gp);
         }
     }
 
@@ -813,20 +833,36 @@ lookup (const struct table_entry *table, size_t table_size, int32_t rel_ip)
   const struct table_entry *e = NULL;
   unsigned long lo, hi, mid;
 
+  Debug (1, "=== BINARY SEARCH (local) ===\n");
+  Debug (1, "rel_ip=0x%x (%d), table_len=%lu\n", 
+         rel_ip, rel_ip, table_len);
+  
   /* do a binary search for right entry: */
   for (lo = 0, hi = table_len; lo < hi;)
     {
       mid = (lo + hi) / 2;
       e = table + mid;
-      Debug (15, "e->start_ip_offset = %lx\n", (long) e->start_ip_offset);
+      Debug (1, "  [%lu,%lu] mid=%lu: rel_ip: %x e->start_ip_offset=0x%x (%d)\n",
+             lo, hi, mid, rel_ip, e->start_ip_offset, e->start_ip_offset);
       if (rel_ip < e->start_ip_offset)
-        hi = mid;
+        {
+          Debug (1, "    rel_ip < start_ip_offset, searching lower half\n");
+          hi = mid;
+        }
       else
-        lo = mid + 1;
+        {
+          Debug (1, "    rel_ip >= start_ip_offset, searching upper half\n");
+          lo = mid + 1;
+        }
     }
   if (hi <= 0)
-        return NULL;
+    {
+      Debug (1, "  Binary search failed: hi=%lu\n", hi);
+      return NULL;
+    }
   e = table + hi - 1;
+  Debug (1, "  Found entry at index %lu: start_ip_offset=0x%x (%d), fde_offset=0x%x\n",
+         hi - 1, e->start_ip_offset, e->start_ip_offset, e->fde_offset);
   return e;
 }
 
@@ -849,6 +885,10 @@ remote_lookup (unw_addr_space_t as,
   int32_t start = 0;
   int ret;
 
+  Debug (1, "=== BINARY SEARCH (remote) ===\n");
+  Debug (1, "rel_ip=0x%x (%d), table=0x%lx, table_len=%zu\n",
+         rel_ip, rel_ip, (long) table, table_len);
+
   /* do a binary search for right entry: */
   for (lo = 0, hi = table_len; lo < hi;)
     {
@@ -857,19 +897,34 @@ remote_lookup (unw_addr_space_t as,
       if ((ret = dwarf_reads32 (as, a, &e_addr, &start, arg)) < 0)
         return ret;
 
+      Debug (1, "  [%d; %d; %d] rel_ip=%d, start=%d\n", lo, mid, hi, rel_ip, start);
+
       if (rel_ip < start)
-        hi = mid;
+        {
+          Debug (1, "    rel_ip < start_ip_offset, searching lower half\n");
+          hi = mid;
+        }
       else
-        lo = mid + 1;
+        {
+          Debug (1, "    rel_ip >= start_ip_offset, searching upper half\n");
+          lo = mid + 1;
+        }
     }
   if (hi <= 0)
-    return 0;
+    {
+      Debug (1, "  Binary search failed: hi=%zu\n", hi);
+      return 0;
+    }
   e_addr = table + (hi - 1) * sizeof (struct table_entry);
+  Debug (1, "  Reading final entry at index %zu, addr=0x%lx\n", 
+         hi - 1, (long) e_addr);
   if ((ret = dwarf_reads32 (as, a, &e_addr, &e->start_ip_offset, arg)) < 0
    || (ret = dwarf_reads32 (as, a, &e_addr, &e->fde_offset, arg)) < 0
    || (hi < table_len &&
        (ret = dwarf_reads32 (as, a, &e_addr, last_ip_offset, arg)) < 0))
     return ret;
+  Debug (1, "  Found: start_ip_offset=0x%x (%d), fde_offset=0x%x (%d)\n",
+         e->start_ip_offset, e->start_ip_offset, e->fde_offset, e->fde_offset);
   return 1;
 }
 
@@ -936,6 +991,25 @@ dwarf_search_unwind_table (unw_addr_space_t as, unw_word_t ip,
     ip_base = segbase;
   }
 
+  Debug (1, "[SEGBASE TRACE] dwarf_search_unwind_table: Using segbase\n");
+  Debug (1, "[SEGBASE TRACE]   di->u.rti.segbase=0x%lx (from di_cache set by dwarf_find_unwind_table)\n", (long) segbase);
+  Debug (1, "[SEGBASE TRACE]   di->format=%d (REMOTE_TABLE=%d, IP_OFFSET=%d, TABLE=%d)\n",
+         di->format, UNW_INFO_FORMAT_REMOTE_TABLE, UNW_INFO_FORMAT_IP_OFFSET, UNW_INFO_FORMAT_TABLE);
+  Debug (1, "[SEGBASE TRACE]   ip_base=0x%lx\n", (long) ip_base);
+
+  Debug (1, "=== DWARF_SEARCH_UNWIND_TABLE DETAILS ===\n");
+  Debug (1, "ip=0x%lx\n", (long) ip);
+  Debug (1, "di->format=%d (REMOTE_TABLE=%d, IP_OFFSET=%d, TABLE=%d)\n",
+         di->format, UNW_INFO_FORMAT_REMOTE_TABLE, UNW_INFO_FORMAT_IP_OFFSET,
+         UNW_INFO_FORMAT_TABLE);
+  Debug (1, "di->start_ip=0x%lx, di->end_ip=0x%lx\n",
+         (long) di->start_ip, (long) di->end_ip);
+  Debug (1, "segbase=0x%lx\n", (long) segbase);
+  Debug (1, "ip_base=0x%lx\n", (long) ip_base);
+  Debug (1, "rel_ip=0x%x (ip - ip_base)\n", (int32_t) (ip - ip_base));
+  Debug (1, "table=%p, table_len=%zu\n", (void*) table, table_len);
+  Debug (1, "debug_frame_base=0x%lx\n", (long) debug_frame_base);
+
 #ifndef UNW_REMOTE_ONLY
   if (as == unw_local_addr_space)
     {
@@ -951,6 +1025,8 @@ dwarf_search_unwind_table (unw_addr_space_t as, unw_word_t ip,
 #ifndef UNW_LOCAL_ONLY
       int32_t last_ip_offset = (int32_t) (di->end_ip - ip_base);
       segbase = di->u.rti.segbase;
+      Debug (1, "[SEGBASE TRACE] dwarf_search_unwind_table: Remote lookup path\n");
+      Debug (1, "[SEGBASE TRACE]   Re-reading segbase=0x%lx from di->u.rti.segbase\n", (long) segbase);
       if ((ret = remote_lookup (as, (uintptr_t) table, table_len,
                                 (int32_t) (ip - ip_base), &ent, &last_ip_offset, arg)) < 0)
         return ret;
@@ -971,12 +1047,23 @@ dwarf_search_unwind_table (unw_addr_space_t as, unw_word_t ip,
          unwind info.  */
       return -UNW_ENOINFO;
     }
-  Debug (15, "ip=0x%lx, start_ip=0x%lx\n",
-         (long) ip, (long) (e->start_ip_offset));
+  Debug (1, "=== FOUND TABLE ENTRY ===\n");
+  Debug (1, "e->start_ip_offset=0x%x (%d)\n",
+         (unsigned int) e->start_ip_offset, e->start_ip_offset);
+  Debug (1, "e->fde_offset=0x%x (%d)\n",
+         (unsigned int) e->fde_offset, e->fde_offset);
+  Debug (1, "calculated start_ip=0x%lx (start_ip_offset + ip_base)\n",
+         (long) (e->start_ip_offset + ip_base));
+  
   if (debug_frame_base)
     fde_addr = e->fde_offset + debug_frame_base;
   else
     fde_addr = e->fde_offset + segbase;
+  Debug (1, "[SEGBASE TRACE] dwarf_search_unwind_table: Calculating fde_addr\n");
+  Debug (1, "[SEGBASE TRACE]   e->fde_offset=0x%lx (offset from table entry)\n", (long) e->fde_offset);
+  Debug (1, "[SEGBASE TRACE]   segbase=0x%lx (will be added to fde_offset if not debug_frame)\n", (long) segbase);
+  Debug (1, "[SEGBASE TRACE]   debug_frame_base=0x%lx\n", (long) debug_frame_base);
+  Debug (1, "[SEGBASE TRACE]   fde_addr=0x%lx (final FDE address)\n", (long) fde_addr);
   Debug (1, "e->fde_offset = %lx, segbase = %lx, debug_frame_base = %lx, "
             "fde_addr = %lx\n", (long) e->fde_offset, (long) segbase,
             (long) debug_frame_base, (long) fde_addr);

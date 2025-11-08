@@ -62,6 +62,12 @@ get_unwind_info (struct elf_dyn_info *edi, pid_t pid, unw_addr_space_t as, unw_w
                           sizeof(path)) < 0)
     return -UNW_ENOINFO;
 
+  Debug (1, "[SEGBASE TRACE] get_unwind_info: After tdep_get_elf_image\n");
+  Debug (1, "[SEGBASE TRACE]   ip=0x%lx, pid=%d\n", (long) ip, pid);
+  Debug (1, "[SEGBASE TRACE]   segbase=0x%lx (from tdep_get_elf_image)\n", (long) segbase);
+  Debug (1, "[SEGBASE TRACE]   mapoff=0x%lx\n", (long) mapoff);
+  Debug (1, "[SEGBASE TRACE]   path=%s\n", path);
+
   /* Here, SEGBASE is the starting-address of the (mmap'ped) segment
      which covers the IP we're looking for.  */
   if (tdep_find_unwind_table (edi, as, path, segbase, mapoff, ip) < 0)

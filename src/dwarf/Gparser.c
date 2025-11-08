@@ -467,6 +467,8 @@ fetch_proc_info (struct dwarf_cursor *c, unw_word_t ip)
   /* check dynamic info first --- it overrides everything else */
   ret = unwi_find_dynamic_proc_info (c->as, ip, &c->pi, 1,
                                      c->as_arg);
+  Debug(16, "unwi_find_dynamic_proc_info(ip=0x%lx) = %d\n",
+         (long) ip, ret);
   if (ret == -UNW_ENOINFO)
     {
       dynamic = 0;
@@ -981,6 +983,8 @@ find_reg_state (struct dwarf_cursor *c, dwarf_state_record_t *sr)
   else
     {
       ret = fetch_proc_info (c, c->ip);
+      Debug (16, "fetched proc info for ip=0x%lx, ret=%d\n",
+             (long) c->ip, ret);
       int next_use_prev_instr = c->use_prev_instr;
       if (ret >= 0)
 	{
@@ -1025,8 +1029,26 @@ dwarf_step (struct dwarf_cursor *c)
 {
   int ret;
   dwarf_state_record_t sr;
-  if ((ret = find_reg_state (c, &sr)) < 0)
+  
+  /* Print library information for debugging */
+  if (c->pi_valid) {
+    char filename[256];
+    unw_word_t offset = 0;
+    unw_accessors_t *a = unw_get_accessors_int (c->as);
+    
+    if (a->get_elf_filename && 
+        (*a->get_elf_filename)(c->as, c->ip, filename, sizeof(filename), &offset, c->as_arg) == 0) {
+      Debug(1, "dwarf_step: Looking up IP 0x%lx in library: %s (offset: 0x%lx)\n", 
+            (long)c->ip, filename, (long)offset);
+    } else {
+      Debug(1, "dwarf_step: Looking up IP 0x%lx (library info not available)\n", (long)c->ip);
+    }
+  }
+  
+  if ((ret = find_reg_state (c, &sr)) < 0) {
+    Debug(2, "Returned sadness : %d\n", ret);
     return ret;
+  }
   return apply_reg_state (c, &sr.rs_current);
 }
 

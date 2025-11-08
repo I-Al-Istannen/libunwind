@@ -48,13 +48,22 @@ tdep_get_elf_image (struct elf_image *ei, pid_t pid, unw_word_t ip,
   if (maps_init (&mi, pid) < 0)
     return -1;
 
-  while (maps_next (&mi, segbase, &hi, mapoff, NULL))
+  while (maps_next (&mi, segbase, &hi, mapoff, NULL)) {
+    // print the mapping
+    Debug (1, "[SEGBASE TRACE] Mapping: segbase=0x%lx, hi=0x%lx, mapoff=0x%lx, path=%s\n",
+           (long)*segbase, (long)hi, (long)*mapoff, mi.path);
     if (ip >= *segbase && ip < hi)
       {
         found = 1;
+        Debug (1, "[SEGBASE TRACE] tdep_get_elf_image: Found mapping for ip=0x%lx\n", (long) ip);
+        Debug (1, "[SEGBASE TRACE]   segbase=0x%lx (start of memory segment from /proc/%d/maps)\n", (long) *segbase, pid);
+        Debug (1, "[SEGBASE TRACE]   hi=0x%lx (end of memory segment)\n", (long) hi);
+        Debug (1, "[SEGBASE TRACE]   mapoff=0x%lx (file offset)\n", (long) *mapoff);
+        Debug (1, "[SEGBASE TRACE]   path=%s\n", mi.path);
         break;
       }
-
+    }
+    
   if (!found)
     {
       maps_close (&mi);

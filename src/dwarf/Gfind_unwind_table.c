@@ -76,8 +76,19 @@ dwarf_find_unwind_table (struct elf_dyn_info *edi,
           if (phdr[i].p_vaddr + phdr[i].p_memsz > end_ip)
             end_ip = phdr[i].p_vaddr + phdr[i].p_memsz;
 
-          if ((phdr[i].p_flags & PF_X) == PF_X)
-            ptxt = phdr + i;
+          /* Find the PT_LOAD segment that corresponds to the memory mapping.
+             When there are multiple executable segments, we need to match
+             the one whose file offset corresponds to mapoff. */
+          if ((phdr[i].p_flags & PF_X) == PF_X) {
+            if (ptxt == NULL || phdr[i].p_offset == mapoff) {
+              Debug(1, "[SEGBASE TRACE] dwarf_find_unwind_table: Selecting PT_LOAD segment at p_offset=0x%lx\n",
+                    (long)phdr[i].p_offset);
+              ptxt = phdr + i;
+            } else {
+              Debug(1, "[SEGBASE TRACE] dwarf_find_unwind_table: Skipping PT_LOAD segment at p_offset=0x%lx (does not match mapoff=0x%lx)\n",
+                    (long)phdr[i].p_offset, (long)mapoff);
+            }
+          }
           if ((uintptr_t) edi->ei.image + phdr->p_filesz > max_load_addr)
             max_load_addr = (uintptr_t) edi->ei.image + phdr->p_filesz;
           break;
@@ -111,6 +122,15 @@ dwarf_find_unwind_table (struct elf_dyn_info *edi,
   load_base = segbase - loadoff;
   start_ip += load_base;
   end_ip += load_base;
+
+  Debug (1, "[SEGBASE TRACE] dwarf_find_unwind_table: Calculating load_base\n");
+  Debug (1, "[SEGBASE TRACE]   segbase=0x%lx (input parameter from get_unwind_info)\n", (long) segbase);
+  Debug (1, "[SEGBASE TRACE]   mapoff=0x%lx\n", (long) mapoff);
+  Debug (1, "[SEGBASE TRACE]   ptxt->p_vaddr=0x%lx (PT_LOAD vaddr from ELF)\n", (long) ptxt->p_vaddr);
+  Debug (1, "[SEGBASE TRACE]   ptxt->p_offset=0x%lx (PT_LOAD offset from ELF)\n", (long) ptxt->p_offset);
+  Debug (1, "[SEGBASE TRACE]   loadoff=0x%lx (mapoff + p_vaddr - p_offset)\n", (long) loadoff);
+  Debug (1, "[SEGBASE TRACE]   load_base=0x%lx (segbase - loadoff)\n", (long) load_base);
+  Debug (1, "[SEGBASE TRACE]   start_ip=0x%lx, end_ip=0x%lx\n", (long) start_ip, (long) end_ip);
 
   if (peh_hdr)
     {
@@ -221,6 +241,14 @@ dwarf_find_unwind_table (struct elf_dyn_info *edi,
                                        to_unw_word (edi->ei.image)
                                        - peh_hdr->p_offset));
       found = 1;
+      Debug (1, "[SEGBASE TRACE] dwarf_find_unwind_table: Setting di_cache.u.rti.segbase\n");
+      Debug (1, "[SEGBASE TRACE]   load_base=0x%lx\n", (long) load_base);
+      Debug (1, "[SEGBASE TRACE]   peh_hdr->p_vaddr=0x%lx (PT_GNU_EH_FRAME vaddr)\n", (long) peh_hdr->p_vaddr);
+      Debug (1, "[SEGBASE TRACE]   peh_hdr->p_offset=0x%lx (PT_GNU_EH_FRAME file offset)\n", (long) peh_hdr->p_offset);
+      Debug (1, "[SEGBASE TRACE]   hdr=0x%lx (mapped address of eh_frame_hdr)\n", (long) to_unw_word (hdr));
+      Debug (1, "[SEGBASE TRACE]   edi->ei.image=0x%lx (mapped ELF base)\n", (long) to_unw_word (edi->ei.image));
+      Debug (1, "[SEGBASE TRACE]   di_cache.u.rti.segbase=0x%lx\n", (long) edi->di_cache.u.rti.segbase);
+      Debug (1, "[SEGBASE TRACE]     (calculation: load_base + p_vaddr + (hdr - image - p_offset))\n");
     }
 
 #if UNW_TARGET_ARM

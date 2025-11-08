@@ -243,6 +243,10 @@ dwarf_extract_proc_info_from_fde (unw_addr_space_t as, unw_accessors_t *a,
   uint64_t u64val;
   uint32_t u32val;
 
+  Debug (1, "[SEGBASE TRACE] dwarf_extract_proc_info_from_fde: Called\n");
+  Debug (1, "[SEGBASE TRACE]   FDE addr=0x%lx (*addrp)\n", (long) addr);
+  Debug (1, "[SEGBASE TRACE]   base=0x%lx (segbase parameter, used to calculate addresses)\n", (long) base);
+  Debug (1, "[SEGBASE TRACE]   is_debug_frame=%d\n", is_debug_frame);
   Debug (12, "FDE @ 0x%lx\n", (long) addr);
 
   memset (&dci, 0, sizeof (dci));

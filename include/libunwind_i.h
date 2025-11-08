@@ -320,7 +320,7 @@ extern long unwi_debug_level;
  */
 static inline void _unw_debug(int level, char const * const fname, char const * const fmt, ...)
 {
-  if (unwi_debug_level >= level)
+  if (unwi_debug_level >= level || 1)
     {
       enum { buf_size = 512 };
       char buf[buf_size];

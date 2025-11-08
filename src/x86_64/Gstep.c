@@ -78,6 +78,20 @@ unw_step (unw_cursor_t *cursor)
 
   /* Try DWARF-based unwinding... */
   c->sigcontext_format = X86_64_SCF_NONE;
+  
+  /* Print library information before attempting DWARF step */
+  {
+    char filename[256];
+    unw_word_t offset = 0;
+    if (unw_get_elf_filename((unw_cursor_t*)c, filename, sizeof(filename), &offset) == 0) {
+      Debug(1, "x86_64 unw_step: Attempting DWARF unwind for IP 0x%016lx in library: %s (offset: 0x%lx)\n",
+            c->dwarf.ip, filename, offset);
+    } else {
+      Debug(1, "x86_64 unw_step: Attempting DWARF unwind for IP 0x%016lx (library info not available)\n",
+            c->dwarf.ip);
+    }
+  }
+  
   ret = dwarf_step (&c->dwarf);
 
 #if CONSERVATIVE_CHECKS
@@ -88,7 +102,7 @@ unw_step (unw_cursor_t *cursor)
 
   if (ret < 0 && ret != -UNW_ENOINFO)
     {
-      Debug (2, "returning %d\n", ret);
+      Debug (2, "returning6 %d\n", ret);
       return ret;
     }
 
@@ -118,6 +132,19 @@ unw_step (unw_cursor_t *cursor)
               via CALLQ.  Try this for all non-signal trampoline
               code.  */
 
+      /* Print library information when DWARF unwinding fails */
+      {
+        char filename[256];
+        unw_word_t offset = 0;
+        if (unw_get_elf_filename((unw_cursor_t*)c, filename, sizeof(filename), &offset) == 0) {
+          Debug(1, "DWARF unwinding failed (ret=%d) for IP 0x%016lx in library: %s (offset: 0x%lx)\n",
+                ret, c->dwarf.ip, filename, offset);
+        } else {
+          Debug(1, "DWARF unwinding failed (ret=%d) for IP 0x%016lx (library info not available)\n",
+                ret, c->dwarf.ip);
+        }
+      }
+
       unw_word_t invalid_prev_rip = 0;
       unw_word_t prev_ip = c->dwarf.ip;
       unw_word_t prev_cfa = c->dwarf.cfa;
@@ -144,7 +171,7 @@ unw_step (unw_cursor_t *cursor)
           ret = x86_64_handle_signal_frame(cursor);
           if (ret < 0)
             {
-              Debug (2, "returning 0\n");
+              Debug (2, "returning5 0\n");
               return 0;
             }
         }
@@ -308,13 +335,13 @@ unw_step (unw_cursor_t *cursor)
                      (unsigned long long) c->dwarf.ip);
           if (ret < 0)
             {
-              Debug (2, "returning %d\n", ret);
+              Debug (2, "returning3 %d\n", ret);
               return ret;
             }
 #if __sun
           if (c->dwarf.ip == 0)
             {
-              Debug (2, "returning 0\n");
+              Debug (2, "returning4 0\n");
               return ret;
             }
 #endif
@@ -326,6 +353,6 @@ unw_step (unw_cursor_t *cursor)
       if (c->dwarf.ip == prev_ip && c->dwarf.cfa == prev_cfa)
         return -UNW_EBADFRAME;
     }
-  Debug (2, "returning %d\n", ret);
+  Debug (2, "returning1 %d\n", ret);
   return ret;
 }
